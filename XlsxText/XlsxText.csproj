@@ -1,0 +1,11 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>XlsxTextReader</AssemblyName>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <Authors>iCunda</Authors>
+    <Description>Quickly read the text in *.xlsx.</Description>
+  </PropertyGroup>
+
+</Project>
