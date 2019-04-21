@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
@@ -7,60 +8,102 @@ using System.Xml;
 
 namespace XlsxText
 {
+    public class XlsxTextCellReference
+    {
+        private string _value;
+        public string Value
+        {
+            get => _value;
+            set
+            {
+                value = value?.Trim().ToUpper();
+                if (value == null || !Regex.IsMatch(value, @"^[A-Z]+\d+$"))
+                    throw new Exception("Invalid value of cell reference");
+
+                int row = int.Parse(new Regex(@"\d+$").Match(value).Value);
+                if (row < 1)
+                    throw new Exception("Invalid value of cell reference");
+
+                string colValue = new Regex(@"^[A-Z]+").Match(value).Value;
+                int col = 0;
+                for (int i = colValue.Length - 1, multiple = 1; i >= 0; --i, multiple *= 26)
+                {
+                    int n = colValue[i] - 'A' + 1;
+                    col += (n * multiple);
+                }
+
+                _value = value;
+                Row = row;
+                Col = col;
+            }
+        }
+        /// <summary>
+        /// Number of rows, starting from 1
+        /// </summary>
+        public int Row { get; private set; }
+        /// <summary>
+        /// Number of columns, starting from 1
+        /// </summary>
+        public int Col { get; private set; }
+
+        public XlsxTextCellReference(string value)
+        {
+            Value = value;
+        }
+
+        public XlsxTextCellReference(int row, int col):this(RowColToValue(row, col))
+        {
+        }
+        public override string ToString() { return Value; }
+
+        /// <summary>
+        /// Row and Col convert to Value
+        /// </summary>
+        /// <param name="row">Number of rows, starting from 1</param>
+        /// <param name="col">Number of columns, starting from 1</param>
+        /// <returns></returns>
+        public static string RowColToValue(int row, int col)
+        {
+            if (row < 1 || col < 1) return null;
+            string colValue = "";
+            while (col > 0)
+            {
+                var n = col % 26;
+                if (n == 0) n = 26;
+                colValue = (char)('A' + n - 1) + colValue;
+                col = (col - n) / 26;
+            }
+            return colValue + row;
+        }
+    }
     public class XlsxTextCell
     {
-        private string _reference = "A1", _value = "";
         /// <summary>
         /// Represents a single cell reference in a SpreadsheetML document
         /// </summary>
-        public string Reference
-        {
-            get => _reference;
-            private set
-            {
-                value = value?.Trim()?.ToUpper() ?? throw new ArgumentNullException(nameof(value));
-                if (!Regex.IsMatch(value, @"^[A-Z]+\d+$"))
-                    throw new Exception("Invalid value of cell reference");
-                _reference = value;
-            }
-        }
+        public XlsxTextCellReference Reference { get; private set; }
+        /// <summary>
+        /// Number of rows, starting from 1
+        /// </summary>
+        public int Row => Reference.Row;
+        /// <summary>
+        /// Number of columns, starting from 1
+        /// </summary>
+        public int Col => Reference.Col;
+
+        private string _value = "";
+        /// <summary>
+        /// Value of cell
+        /// </summary>
         public string Value
         {
             get => _value;
             private set => _value = value ?? "";
         }
 
-        /// <summary>
-        /// Number of rows, starting from 1
-        /// </summary>
-        public int Row
-        {
-            get
-            {
-                return int.Parse(new Regex(@"\d+$").Match(Reference).Value);
-            }
-        }
-        /// <summary>
-        /// Number of columns, starting from 1
-        /// </summary>
-        public int Col
-        {
-            get
-            {
-                string value = new Regex(@"^[A-Z]+").Match(Reference).Value;
-                int col = 0;
-                for (int i = value.Length - 1, multiple = 1; i >= 0; --i, multiple *= 26)
-                {
-                    int n = value[i] - 'A' + 1;
-                    col += (n * multiple);
-                }
-                return col;
-            }
-        }
-
         internal XlsxTextCell(string reference, string value)
         {
-            Reference = reference;
+            Reference = new XlsxTextCellReference(reference);
             Value = value;
         }
     }
@@ -140,11 +183,17 @@ namespace XlsxText
                         while (cellReader.Read()) ;
 
                         if (type == "d")
-                            throw new Exception("can not parse the cell " + reference + "'s value of date type");
+                        {
+                            Trace.TraceWarning("Can not parse the cell " + reference + "'s value of date type");
+                        }
                         else if (type == "e")
-                            throw new Exception("can not parse the cell " + reference + "'s value of error type");
+                        {
+                            Trace.TraceWarning("Can not parse the cell " + reference + "'s value of error type");
+                        }
                         else if (type == "s")
+                        {
                             value = Archive.GetSharedString(int.Parse(value));
+                        }
                         else if (type == "inlineStr")
                         {
 
@@ -155,33 +204,31 @@ namespace XlsxText
                         }
                         else
                         {
-                            if (type == null)
+                            if (value != null)  // this cell's value is NumberFormat
                             {
-                                // this is a mergeCell
-                                if (value == null)
+                                if (style != null)
                                 {
-                                    XlsxTextCell cell = new XlsxTextCell(reference, "");
-                                    int row = cell.Row, col = cell.Col;
-                                    foreach (var mergeCell in _mergeCells)
-                                    {
-                                        XlsxTextCell begin = new XlsxTextCell(mergeCell.Key, "");
-                                        if (row >= begin.Row && col >= begin.Col)
-                                        {
-                                            XlsxTextCell end = new XlsxTextCell(mergeCell.Value.Key, "");
-                                            if (row <= end.Row && col <= end.Col)
-                                                value = mergeCell.Value.Value != null ? mergeCell.Value.Value : "";
-                                        }
-                                    }
+                                    Trace.TraceWarning("Can not parse the cell " + reference + "'s value of NumberFormat type. Please replace with string type.");
+                                    value = null;
                                 }
-                                // this cell's value is NumberFormat
-                                else if (style != null)
+                            }
+                            else
+                            {
+                                XlsxTextCellReference curr = new XlsxTextCellReference(reference);
+                                foreach (var mergeCell in _mergeCells)
                                 {
-                                    throw new Exception("can not parse the cell " + reference + "'s value of NumberFormat type. Please replace with string type. ");
+                                    XlsxTextCellReference begin = new XlsxTextCellReference(mergeCell.Key);
+                                    if (curr.Row >= begin.Row && curr.Col >= begin.Col && !(curr.Row == begin.Row && curr.Col == begin.Col))
+                                    {
+                                        XlsxTextCellReference end = new XlsxTextCellReference(mergeCell.Value.Key);
+                                        if (curr.Row <= end.Row && curr.Col <= end.Col)
+                                            value = mergeCell.Value.Value;
+                                    }
                                 }
                             }
                         }
 
-                        if (value == null) throw new Exception("can not parse the cell " + reference + "'s value");
+                        if(value == null) continue;
 
                         if (_mergeCells.TryGetValue(reference, out _))
                             _mergeCells[reference] = new KeyValuePair<string, string>(_mergeCells[reference].Key, value);
