@@ -6,6 +6,7 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Authors>iCunda</Authors>
     <Description>Quickly read the text in *.xlsx.</Description>
+    <RepositoryUrl>https://github.com/iCunda/XlsxText.git</RepositoryUrl>
   </PropertyGroup>
 
 </Project>
