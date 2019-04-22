@@ -51,7 +51,7 @@ namespace XlsxText
             Value = value;
         }
 
-        public XlsxTextCellReference(int row, int col):this(RowColToValue(row, col))
+        public XlsxTextCellReference(int row, int col) : this(RowColToValue(row, col))
         {
         }
         public override string ToString() { return Value; }
@@ -159,6 +159,17 @@ namespace XlsxText
             }
         }
 
+        public string GetNumFmtValue(int cellStyle, string rawValue)
+        {
+            string formatCode = Archive.GetNumFmtCode(cellStyle);
+            if (formatCode == null) return null;
+
+            Trace.TraceWarning("Can not parse the value of numFmt: " + formatCode);
+            return null;
+            string value = "";
+            return value;
+        }
+
         private bool _isReading = false;
         private XmlReader _reader;
         public bool Read()
@@ -208,8 +219,9 @@ namespace XlsxText
                             {
                                 if (style != null)
                                 {
-                                    Trace.TraceWarning("Can not parse the cell " + reference + "'s value of NumberFormat type. Please replace with string type.");
-                                    value = null;
+                                    value = GetNumFmtValue(int.Parse(style), value);
+                                    if(value == null)
+                                        Trace.TraceWarning("Can not parse the cell " + reference + "'s value of NumberFormat type. Please replace with string type.");
                                 }
                             }
                             else
@@ -228,7 +240,7 @@ namespace XlsxText
                             }
                         }
 
-                        if(value == null) continue;
+                        if (value == null) continue;
 
                         if (_mergeCells.TryGetValue(reference, out _))
                             _mergeCells[reference] = new KeyValuePair<string, string>(_mergeCells[reference].Key, value);
@@ -248,14 +260,54 @@ namespace XlsxText
         public const string RelationshipPart = "xl/_rels/workbook.xml.rels";
         public const string WorkbookPart = "xl/workbook.xml";
         public const string SharedStringsPart = "xl/sharedStrings.xml";
+        public const string StylesPart = "xl/styles.xml";
+        private readonly Dictionary<int, string> StandardNumFmts = new Dictionary<int, string>()
+        {
+            { 0, "General" },
+            { 1, "0" },
+            { 2, "0.00" },
+            { 3, "#,##0" },
+            { 4, "#,##0.00" },
+            { 9, "0%" },
+            { 10, "0.00%" },
+            { 11, "0.00E+00" },
+            { 12, "# ?/?" },
+            { 13, "# ??/??" },
+            { 14, "mm-dd-yy" },
+            { 15, "d-mmm-yy" },
+            { 16, "d-mmm" },
+            { 17, "mmm-yy" },
+            { 18, "h:mm AM/PM" },
+            { 19, "h:mm:ss AM/PM" },
+            { 20, "h:mm" },
+            { 21, "h:mm:ss" },
+            { 22, "m/d/yy h:mm" },
+            { 37, "#,##0 ;(#,##0)" },
+            { 38, "#,##0 ;[Red](#,##0)" },
+            { 39, "#,##0.00;(#,##0.00)" },
+            { 40, "#,##0.00;[Red](#,##0.00)" },
+            { 45, "mm:ss" },
+            { 46, "[h]:mm:ss" },
+            { 47, "mmss.0" },
+            { 48, "##0.0E+0" },
+            { 49, "@" }
+        };
 
         private ZipArchive _archive;
         private Dictionary<string, string> _rels = new Dictionary<string, string>();
         private List<KeyValuePair<string, string>> _sheets = new List<KeyValuePair<string, string>>();
         private List<string> _sharedStrings = new List<string>();
+        private Dictionary<int, string> _numFmts;
+        private List<int> _cellXfs = new List<int>();
 
         public int SheetsCount => _sheets.Count;
-        public string GetSharedString(int index) => 0 <= index && index < _sharedStrings.Count ? _sharedStrings[index] : null;
+        public string GetSharedString(int index) => 0 <= index && index < _sharedStrings.Count ? _sharedStrings[index] : null;    
+        public string GetNumFmtCode(int cellStyle)
+        {
+            if (0 <= cellStyle && cellStyle < _cellXfs.Count && _numFmts.TryGetValue(_cellXfs[cellStyle], out var formatCode))
+                return formatCode;
+            return null;
+        }
         private XlsxTextReader(Stream stream)
         {
             _archive = new ZipArchive(stream, ZipArchiveMode.Read);
@@ -277,7 +329,7 @@ namespace XlsxText
         private void Load()
         {
             _rels.Clear();
-            using (Stream stream = _archive.GetEntry("xl/_rels/workbook.xml.rels").Open())
+            using (Stream stream = _archive.GetEntry(RelationshipPart).Open())
             {
                 using (XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings { IgnoreWhitespace = true, IgnoreComments = true }))
                 {
@@ -293,7 +345,7 @@ namespace XlsxText
             }
 
             _sheets.Clear();
-            using (Stream stream = _archive.GetEntry(XlsxTextReader.WorkbookPart).Open())
+            using (Stream stream = _archive.GetEntry(WorkbookPart).Open())
             {
                 using (XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings { IgnoreWhitespace = true, IgnoreComments = true }))
                 {
@@ -309,7 +361,7 @@ namespace XlsxText
             }
 
             _sharedStrings.Clear();
-            using (Stream stream = _archive.GetEntry("xl/sharedStrings.xml")?.Open())
+            using (Stream stream = _archive.GetEntry(SharedStringsPart)?.Open())
             {
                 if (stream != null)
                 {
@@ -346,6 +398,32 @@ namespace XlsxText
                                     }
                                 }
                             } while (reader.ReadToNextSibling("si"));
+                        }
+                    }
+                }
+            }
+
+            _numFmts = new Dictionary<int, string>(StandardNumFmts);
+            _cellXfs.Clear();
+            using (Stream stream = _archive.GetEntry(StylesPart)?.Open())
+            {
+                if (stream != null)
+                {
+                    using (XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings { IgnoreWhitespace = true, IgnoreComments = true }))
+                    {
+                        if (reader.ReadToDescendant("styleSheet") && reader.ReadToDescendant("numFmts") && reader.ReadToDescendant("numFmt"))
+                        {
+                            do
+                            {
+                                _numFmts[int.Parse(reader["numFmtId"])] = reader["formatCode"];
+                            } while (reader.ReadToNextSibling("numFmt"));
+                        }
+                        if(reader.ReadToNextSibling("cellXfs") && reader.ReadToDescendant("xf"))
+                        {
+                            do
+                            {
+                                _cellXfs.Add(int.Parse(reader["numFmtId"]));
+                            } while (reader.ReadToNextSibling("xf"));
                         }
                     }
                 }

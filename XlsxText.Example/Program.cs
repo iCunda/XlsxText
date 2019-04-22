@@ -11,7 +11,6 @@ namespace XlsxText.Example
         public const string ResourcePath = "../../../Resource";
         static void Main(string[] args)
         {
-            string s = "xx" + null + "xx";
             XlsxTextReader xlsx = XlsxTextReader.Create(ResourcePath + "/example.xlsx");
             while (xlsx.Read())
             {
