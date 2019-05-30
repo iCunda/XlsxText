@@ -1,8 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Diagnostics;
 
 namespace XlsxText.Example
 {
@@ -14,6 +11,8 @@ namespace XlsxText.Example
             XlsxTextReader xlsx = XlsxTextReader.Create(ResourcePath + "/example.xlsx");
             while (xlsx.Read())
             {
+                Stopwatch sw = new Stopwatch();
+                sw.Start();
                 XlsxTextSheetReader sheetReader = xlsx.SheetReader;
                 Console.WriteLine("Sheet Name: " + sheetReader.Name);
 
@@ -23,12 +22,15 @@ namespace XlsxText.Example
                         continue;
                     foreach (var cell in sheetReader.Row)
                     {
-                        Console.Write(cell.Value + "\t");
+                        //Console.Write(cell.Value + "\t");
                     }
-                    Console.WriteLine();
+                    //Console.WriteLine();
                 }
-                Console.WriteLine();
+                //Console.WriteLine();
+                sw.Stop();
+                Console.WriteLine("sw总共花费{0}ms.", sw.Elapsed.TotalMilliseconds);
             }
+
             Console.ReadKey();
         }
     }
