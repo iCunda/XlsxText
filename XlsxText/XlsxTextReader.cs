@@ -1,9 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+#if DEBUG
 using System.Diagnostics;
+#endif
 using System.IO;
 using System.IO.Compression;
-using System.Text.RegularExpressions;
 using System.Xml;
 
 namespace XlsxText
@@ -16,23 +17,31 @@ namespace XlsxText
             get => _value;
             set
             {
-                value = value?.Trim().ToUpper();
-                if (value == null || !Regex.IsMatch(value, @"^[A-Z]+\d+$"))
+                string expr = value?.Trim().ToUpper() ?? "", rowValue = "", colValue = "";
+                for (int i = 0; i < expr.Length; ++i)
+                {
+                    if (!('A' <= expr[i] && expr[i] <= 'Z'))
+                    {
+                        rowValue = expr.Substring(i);
+                        colValue = expr.Substring(0, i);
+                        break;
+                    }
+                }
+                if (rowValue == "" || colValue == "")
                     throw new Exception("Invalid value of cell reference");
 
-                int row = int.Parse(new Regex(@"\d+$").Match(value).Value);
-                if (row < 1)
+                long row;
+                if (!long.TryParse(rowValue, out row) || row < 1)
                     throw new Exception("Invalid value of cell reference");
 
-                string colValue = new Regex(@"^[A-Z]+").Match(value).Value;
-                int col = 0;
+                long col = 0;
                 for (int i = colValue.Length - 1, multiple = 1; i >= 0; --i, multiple *= 26)
                 {
                     int n = colValue[i] - 'A' + 1;
                     col += (n * multiple);
                 }
 
-                _value = value;
+                _value = expr;
                 Row = row;
                 Col = col;
             }
@@ -40,11 +49,11 @@ namespace XlsxText
         /// <summary>
         /// Number of rows, starting from 1
         /// </summary>
-        public int Row { get; private set; }
+        public long Row { get; private set; }
         /// <summary>
         /// Number of columns, starting from 1
         /// </summary>
-        public int Col { get; private set; }
+        public long Col { get; private set; }
 
         public XlsxTextCellReference(string value)
         {
@@ -85,11 +94,11 @@ namespace XlsxText
         /// <summary>
         /// Number of rows, starting from 1
         /// </summary>
-        public int Row => Reference.Row;
+        public long Row => Reference.Row;
         /// <summary>
         /// Number of columns, starting from 1
         /// </summary>
-        public int Col => Reference.Col;
+        public long Col => Reference.Col;
 
         private string _value = "";
         /// <summary>
@@ -138,68 +147,128 @@ namespace XlsxText
 
         private void Load(ZipArchiveEntry archiveEntry)
         {
-            _mergeCells.Clear();
-            using (XmlReader mergeCellsReader = XmlReader.Create(archiveEntry.Open(), new XmlReaderSettings { IgnoreWhitespace = true, IgnoreComments = true }))
+            /*
+             * <worksheet>
+             *     <mergeCells count="5">
+             *         <mergeCell ref="A1:B2"/>
+             *         <mergeCell ref="C1:E5"/>
+             *         <mergeCell ref="A3:B6"/>
+             *         <mergeCell ref="A7:C7"/>
+             *         <mergeCell ref="A8:XFD9"/>
+             *     </mergeCells>
+             * <worksheet>
+            */
+            using (XmlReader reader = XmlReader.Create(archiveEntry.Open()))
             {
-                mergeCellsReader.MoveToContent();
-                if (mergeCellsReader.NodeType == XmlNodeType.Element && mergeCellsReader.Name == "worksheet" && mergeCellsReader.ReadToDescendant("mergeCells") && mergeCellsReader.ReadToDescendant("mergeCell"))
+                string[] names = new string[3];
+                long count = 0;
+                while (reader.Read())
                 {
-                    do
+                    if (reader.NodeType == XmlNodeType.Element)
                     {
-                        string[] references = mergeCellsReader["ref"].Split(':');
-                        _mergeCells.Add(references[0], new KeyValuePair<string, string>(references[1], null));
-                    } while (mergeCellsReader.ReadToNextSibling("mergeCell"));
+                        if (count < 3) names[count] = reader.Name;
+                        ++count;
+
+                        if (count == 3 && names[0] == "worksheet" && names[1] == "mergeCells" && names[2] == "mergeCell")
+                        {
+                            string[] references = reader["ref"]?.Split(':');
+                            if (references?.Length == 2) _mergeCells.Add(references[0], new KeyValuePair<string, string>(references[1], null));
+                        }
+
+                        if (reader.IsEmptyElement) --count;
+                    }
+                    else if (reader.NodeType == XmlNodeType.EndElement)
+                    {
+                        --count;
+                    }
                 }
             }
 
-            _reader = XmlReader.Create(archiveEntry.Open(), new XmlReaderSettings { IgnoreWhitespace = true, IgnoreComments = true });
-            if (_reader.ReadToDescendant("worksheet") && _reader.ReadToDescendant("sheetData"))
+            _reader = XmlReader.Create(archiveEntry.Open());
+            if (!(_reader.ReadToDescendant("worksheet") && _reader.ReadToDescendant("sheetData")))
             {
-                _reader = _reader.ReadSubtree();
+                _reader.Close();
             }
         }
-
         public string GetNumFmtValue(int cellStyle, string rawValue)
         {
             string formatCode = Archive.GetNumFmtCode(cellStyle);
-            if (formatCode == null) return null;
-
-            Trace.TraceWarning("Can not parse the value of numFmt: " + formatCode);
-            return null;
-            string value = "";
-            return value;
+            if (formatCode == XlsxTextReader.StandardNumFmts[0])
+                return rawValue;
+            else
+                return null;
         }
 
-        private bool _isReading = false;
         private XmlReader _reader;
         public bool Read()
         {
+            /*
+             * <row r="1">
+             *     <c r="A1" s="11"><v>2</v></c>
+             *     <c r="B1" s="11"><v>3</v></c>
+             *     <c r="C1" s="11"><v>4</v></c>
+             *     <c r="D1" t="s"><v>0</v></c>
+             *     <c r="E1" t="inlineStr"><is><t>This is inline string example</t></is></c>
+             *     <c r="D1" t="d"><v>1976-11-22T08:30</v></c>
+             *     <c r="G1"><f>SUM(A1:A3)</f><v>9</v></c>
+             *     <c r="H1" s="11"/>
+             * </row>
+            */
             Row.Clear();
-            if (_isReading ? _reader.ReadToNextSibling("row") : _reader.ReadToDescendant("row"))
+            string[] names = new string[4];
+            long count = 0;
+            long rowIndex;
+            string reference = "", value = "", type = "", style = "";
+            while (_reader.Read())
             {
-                _isReading = true;
-                // read a row
-                XmlReader rowReader = _reader.ReadSubtree();
-                if (rowReader.ReadToDescendant("c"))
+                if (_reader.NodeType == XmlNodeType.Element)
                 {
-                    do
+                    if (count < 4) names[count] = _reader.Name;
+                    ++count;
+
+                    if (count == 1 && names[0] == "row")
+                        long.TryParse(_reader["r"], out rowIndex);
+                    if (count == 2 && names[0] == "row" && names[1] == "c")
                     {
-                        string reference = rowReader["r"], style = rowReader["s"], type = rowReader["t"], value = null;
-                        XmlReader cellReader = rowReader.ReadSubtree();
+                        reference = _reader["r"] ?? "";
+                        type = _reader["t"] ?? "";
+                        style = _reader["s"] ?? "";
 
-                        if (type == "inlineStr" && cellReader.ReadToDescendant("is") && cellReader.ReadToDescendant("t"))
-                            value = cellReader.ReadElementContentAsString();
-                        else if (cellReader.ReadToDescendant("v"))
-                            value = cellReader.ReadElementContentAsString();
-                        while (cellReader.Read()) ;
-
+                        if (_reader.IsEmptyElement)
+                        {
+                            XlsxTextCellReference curr = new XlsxTextCellReference(reference);
+                            foreach (var mergeCell in _mergeCells)
+                            {
+                                XlsxTextCellReference begin = new XlsxTextCellReference(mergeCell.Key);
+                                if (curr.Row >= begin.Row && curr.Col >= begin.Col && !(curr.Row == begin.Row && curr.Col == begin.Col))
+                                {
+                                    XlsxTextCellReference end = new XlsxTextCellReference(mergeCell.Value.Key);
+                                    if (curr.Row <= end.Row && curr.Col <= end.Col)
+                                        value = mergeCell.Value.Value;
+                                }
+                            }
+                            Row.Add(new XlsxTextCell(reference, value));
+                            reference = value = type = style = "";
+                        }
+                    }
+                    if (_reader.IsEmptyElement) --count;
+                }
+                else if (_reader.NodeType == XmlNodeType.Text)
+                {
+                    if (names[0] == "row" && names[1] == "c" && ((count == 3 && names[2] == "v") || (count == 4 && names[3] == "is" && names[4] == "t")))
+                    {
+                        value = _reader.Value;
                         if (type == "d")
                         {
+#if DEBUG
                             Trace.TraceWarning("Can not parse the cell " + reference + "'s value of date type");
+#endif
                         }
                         else if (type == "e")
                         {
+#if DEBUG
                             Trace.TraceWarning("Can not parse the cell " + reference + "'s value of error type");
+#endif
                         }
                         else if (type == "s")
                         {
@@ -215,41 +284,35 @@ namespace XlsxText
                         }
                         else
                         {
-                            if (value != null)  // this cell's value is NumberFormat
+                            string rawValue = value;
+                            if (int.TryParse(style, out int styleId))
                             {
-                                if (style != null)
-                                {
-                                    value = GetNumFmtValue(int.Parse(style), value);
-                                    if(value == null)
-                                        Trace.TraceWarning("Can not parse the cell " + reference + "'s value of NumberFormat type. Please replace with string type.");
-                                }
-                            }
-                            else
-                            {
-                                XlsxTextCellReference curr = new XlsxTextCellReference(reference);
-                                foreach (var mergeCell in _mergeCells)
-                                {
-                                    XlsxTextCellReference begin = new XlsxTextCellReference(mergeCell.Key);
-                                    if (curr.Row >= begin.Row && curr.Col >= begin.Col && !(curr.Row == begin.Row && curr.Col == begin.Col))
-                                    {
-                                        XlsxTextCellReference end = new XlsxTextCellReference(mergeCell.Value.Key);
-                                        if (curr.Row <= end.Row && curr.Col <= end.Col)
-                                            value = mergeCell.Value.Value;
-                                    }
-                                }
+                                value = GetNumFmtValue(styleId, rawValue);
+#if DEBUG
+                                if (value == null)
+                                    Trace.TraceWarning("Can not parse the cell " + reference + "'s value of NumberFormat type. Please replace with string type.");
+#endif
                             }
                         }
 
-                        if (value == null) continue;
+                        if (value != null)
+                        {
+                            if (_mergeCells.TryGetValue(reference, out _))
+                                _mergeCells[reference] = new KeyValuePair<string, string>(_mergeCells[reference].Key, value);
 
-                        if (_mergeCells.TryGetValue(reference, out _))
-                            _mergeCells[reference] = new KeyValuePair<string, string>(_mergeCells[reference].Key, value);
-
-                        Row.Add(new XlsxTextCell(reference, value));
-
-                    } while (rowReader.ReadToNextSibling("c"));
+                            Row.Add(new XlsxTextCell(reference, value));
+                            reference = value = type = style = "";
+                        }
+                    }
                 }
-                return true;
+                else if (_reader.NodeType == XmlNodeType.EndElement)
+                {
+                    --count;
+                    if (count == 0 && _reader.Name == "row")
+                        return true;
+                    else if (count < 0)
+                        return false;
+                }
             }
 
             return false;
@@ -261,7 +324,7 @@ namespace XlsxText
         public const string WorkbookPart = "xl/workbook.xml";
         public const string SharedStringsPart = "xl/sharedStrings.xml";
         public const string StylesPart = "xl/styles.xml";
-        private readonly Dictionary<int, string> StandardNumFmts = new Dictionary<int, string>()
+        public static readonly Dictionary<int, string> StandardNumFmts = new Dictionary<int, string>()
         {
             { 0, "General" },
             { 1, "0" },
@@ -301,7 +364,7 @@ namespace XlsxText
         private List<int> _cellXfs = new List<int>();
 
         public int SheetsCount => _sheets.Count;
-        public string GetSharedString(int index) => 0 <= index && index < _sharedStrings.Count ? _sharedStrings[index] : null;    
+        public string GetSharedString(int index) => 0 <= index && index < _sharedStrings.Count ? _sharedStrings[index] : null;
         public string GetNumFmtCode(int cellStyle)
         {
             if (0 <= cellStyle && cellStyle < _cellXfs.Count && _numFmts.TryGetValue(_cellXfs[cellStyle], out var formatCode))
@@ -331,15 +394,44 @@ namespace XlsxText
             _rels.Clear();
             using (Stream stream = _archive.GetEntry(RelationshipPart).Open())
             {
-                using (XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings { IgnoreWhitespace = true, IgnoreComments = true }))
+                if (stream != null)
                 {
-                    reader.MoveToContent();
-                    if (reader.NodeType == XmlNodeType.Element && reader.Name == "Relationships" && reader.ReadToDescendant("Relationship"))
+                    /*
+                     * xl/styles.xml
+                     * <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                     *     <Relationship Id="rId8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+                     *     <Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+                     *     <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+                     *     <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+                     *     <Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
+                     * </Relationships>
+                    */
+                    using (XmlReader reader = XmlReader.Create(stream))
                     {
-                        do
+                        string[] names = new string[2];
+                        long count = 0;
+                        while (reader.Read())
                         {
-                            _rels.Add(reader["Id"], "xl/" + reader["Target"]);
-                        } while (reader.ReadToNextSibling("Relationship"));
+                            if (reader.NodeType == XmlNodeType.Element)
+                            {
+                                if (count < 2) names[count] = reader.Name;
+                                ++count;
+
+                                if (count == 2 && names[0] == "Relationships" && names[1] == "Relationship")
+                                {
+                                    string id = reader["Id"] ?? "";
+                                    string code = reader["Target"] ?? "";
+                                    if (id != "" && code != "")
+                                        _rels.Add(id, "xl/" + code);
+                                }
+
+                                if (reader.IsEmptyElement) --count;
+                            }
+                            else if (reader.NodeType == XmlNodeType.EndElement)
+                            {
+                                --count;
+                            }
+                        }
                     }
                 }
             }
@@ -347,15 +439,43 @@ namespace XlsxText
             _sheets.Clear();
             using (Stream stream = _archive.GetEntry(WorkbookPart).Open())
             {
-                using (XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings { IgnoreWhitespace = true, IgnoreComments = true }))
+                if (stream != null)
                 {
-                    reader.MoveToContent();
-                    if (reader.NodeType == XmlNodeType.Element && reader.Name == "workbook" && reader.ReadToDescendant("sheets") && reader.ReadToDescendant("sheet"))
+                    /*
+                     * <workbook>
+                     *     <sheets>
+                     *         <sheet name="Example1" sheetId="1" r:id="rId1"/>
+                     *         <sheet name="Example2" sheetId="6" r:id="rId2"/>
+                     *         <sheet name="Example3" sheetId="7" r:id="rId3"/>
+                     *         <sheet name="Example4" sheetId="8" r:id="rId4"/>
+                     *     </sheets>
+                     * <workbook>
+                    */
+                    using (XmlReader reader = XmlReader.Create(stream))
                     {
-                        do
+                        string[] names = new string[3];
+                        long count = 0;
+                        while (reader.Read())
                         {
-                            _sheets.Add(new KeyValuePair<string, string>(reader["name"], _rels[reader["r:id"]]));
-                        } while (reader.ReadToNextSibling("sheet"));
+                            if (reader.NodeType == XmlNodeType.Element)
+                            {
+                                if (count < 3) names[count] = reader.Name;
+                                ++count;
+
+                                if (count == 3 && names[0] == "workbook" && names[1] == "sheets" && names[2] == "sheet")
+                                {
+                                    string name = reader["name"] ?? "";
+                                    if (name != "" && _rels.TryGetValue(reader["r:id"] ?? "", out string url))
+                                        _sheets.Add(new KeyValuePair<string, string>(name, url));
+                                }
+
+                                if (reader.IsEmptyElement) --count;
+                            }
+                            else if (reader.NodeType == XmlNodeType.EndElement)
+                            {
+                                --count;
+                            }
+                        }
                     }
                 }
             }
@@ -365,39 +485,48 @@ namespace XlsxText
             {
                 if (stream != null)
                 {
-                    using (XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings { IgnoreWhitespace = true, IgnoreComments = true }))
+                    /*
+                     * xl/sharedStrings.xml
+                     * <sst>
+                     *     <si><t>共享字符串1</t></si>
+                     *     <si><r><t>共享富文本字符串1</t></r><r><t>共享富文本字符串2</t></r></si>
+                     * </sst>
+                    */
+                    using (XmlReader reader = XmlReader.Create(stream))
                     {
-                        reader.MoveToContent();
-                        if (reader.NodeType == XmlNodeType.Element && reader.Name == "sst" && reader.ReadToDescendant("si"))
+                        string[] names = new string[4];
+                        long count = 0;
+                        string expr = "";
+                        while (reader.Read())
                         {
-                            do
+                            if (reader.NodeType == XmlNodeType.Element && !reader.IsEmptyElement)
                             {
-                                XmlReader inner = reader.ReadSubtree();
-                                if (inner.Read() && inner.Read())
+                                if (count < 4) names[count] = reader.Name;
+                                ++count;
+                            }
+                            else if (reader.NodeType == XmlNodeType.Text)
+                            {
+                                if ((count == 3 || count == 4) && names[0] == "sst" && names[1] == "si")
                                 {
-                                    if (inner.NodeType == XmlNodeType.Element && inner.Name == "t")
+                                    if (count == 3 && names[2] == "t")
                                     {
-                                        _sharedStrings.Add(inner.ReadElementContentAsString());
-                                        while (inner.Read()) ;
+                                        expr = reader.Value;
                                     }
-                                    else if (inner.NodeType == XmlNodeType.Element && inner.Name == "r")
+                                    else if (count == 4 && names[2] == "r" && names[3] == "t")
                                     {
-                                        string value = "";
-                                        do
-                                        {
-                                            XmlReader inner2 = inner.ReadSubtree();
-                                            if (inner2.ReadToDescendant("t"))
-                                            {
-                                                do
-                                                {
-                                                    value += inner2.ReadElementContentAsString();
-                                                } while (inner2.ReadToNextSibling("t"));
-                                            }
-                                        } while (inner.ReadToNextSibling("r"));
-                                        _sharedStrings.Add(value);
+                                        expr += reader.Value;
                                     }
                                 }
-                            } while (reader.ReadToNextSibling("si"));
+                            }
+                            else if (reader.NodeType == XmlNodeType.EndElement)
+                            {
+                                --count;
+                                if (count == 1 && reader.Name == "si")
+                                {
+                                    _sharedStrings.Add(expr);
+                                    expr = "";
+                                }
+                            }
                         }
                     }
                 }
@@ -409,21 +538,50 @@ namespace XlsxText
             {
                 if (stream != null)
                 {
-                    using (XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings { IgnoreWhitespace = true, IgnoreComments = true }))
+                    /*
+                     * xl/styles.xml
+                     * <styleSheet>
+                     *     <numFmts count="2">
+                     *         <numFmt numFmtId="8" formatCode="&quot;¥&quot;#,##0.00;[Red]&quot;¥&quot;\-#,##0.00"/>
+                     *         <numFmt numFmtId="176" formatCode="&quot;$&quot;#,##0.00_);\(&quot;$&quot;#,##0.00\)"/>
+                     *     </numFmts>
+                     *     <cellXfs count="3">
+                     *         <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+                     *         <xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+                     *         <xf numFmtId="20" fontId="0" fillId="0" borderId="0" xfId="0" quotePrefix="1" applyNumberFormat="1"/>
+                     *     </cellXfs>
+                     * </styleSheet>
+                    */
+                    using (XmlReader reader = XmlReader.Create(stream))
                     {
-                        if (reader.ReadToDescendant("styleSheet") && reader.ReadToDescendant("numFmts") && reader.ReadToDescendant("numFmt"))
+                        string[] names = new string[3];
+                        long count = 0;
+                        while (reader.Read())
                         {
-                            do
+                            if (reader.NodeType == XmlNodeType.Element)
                             {
-                                _numFmts[int.Parse(reader["numFmtId"])] = reader["formatCode"];
-                            } while (reader.ReadToNextSibling("numFmt"));
-                        }
-                        if(reader.ReadToNextSibling("cellXfs") && reader.ReadToDescendant("xf"))
-                        {
-                            do
+                                if (count < 3) names[count] = reader.Name;
+                                ++count;
+
+                                if (count == 3 && names[0] == "styleSheet")
+                                {
+                                    if (names[1] == "numFmts" && names[2] == "numFmt" && int.TryParse(reader["numFmtId"], out int nid))
+                                    {
+                                        string code = reader["formatCode"] ?? "";
+                                        if (code != "") _numFmts[nid] = code;
+                                    }
+                                    else if (names[1] == "cellXfs" && names[2] == "xf" && int.TryParse(reader["numFmtId"], out int xid))
+                                    {
+                                        _cellXfs.Add(xid);
+                                    }
+                                }
+
+                                if (reader.IsEmptyElement) --count;
+                            }
+                            else if (reader.NodeType == XmlNodeType.EndElement)
                             {
-                                _cellXfs.Add(int.Parse(reader["numFmtId"]));
-                            } while (reader.ReadToNextSibling("xf"));
+                                --count;
+                            }
                         }
                     }
                 }
