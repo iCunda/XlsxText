@@ -14,7 +14,7 @@ namespace XlsxText.Example
                 Stopwatch sw = new Stopwatch();
                 sw.Start();
                 XlsxTextSheetReader sheetReader = xlsx.SheetReader;
-                Console.WriteLine("Sheet Name: " + sheetReader.Name);
+                Console.WriteLine("Sheet Name: " + sheetReader.Name + ", 行数: " + sheetReader.RowCount + ", 单元格数: " + sheetReader.CellCount);
 
                 while (sheetReader.Read())
                 {
@@ -22,11 +22,11 @@ namespace XlsxText.Example
                         continue;
                     foreach (var cell in sheetReader.Row)
                     {
-                        //Console.Write(cell.Value + "\t");
+                        Console.Write(cell.Value + "\t");
                     }
-                    //Console.WriteLine();
+                    Console.WriteLine();
                 }
-                //Console.WriteLine();
+                Console.WriteLine();
                 sw.Stop();
                 Console.WriteLine("sw总共花费{0}ms.", sw.Elapsed.TotalMilliseconds);
             }

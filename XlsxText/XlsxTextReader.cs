@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-#if DEBUG
 using System.Diagnostics;
-#endif
 using System.IO;
 using System.IO.Compression;
 using System.Xml;
@@ -121,6 +119,8 @@ namespace XlsxText
     {
         public XlsxTextReader Archive { get; private set; }
         public string Name { get; private set; }
+        public long CellCount { get; private set; } = 0;
+        public long RowCount { get; private set; } = 0;
 
         private Dictionary<string, KeyValuePair<string, string>> _mergeCells = new Dictionary<string, KeyValuePair<string, string>>();
         public List<XlsxTextCell> Row { get; private set; } = new List<XlsxTextCell>();
@@ -147,7 +147,52 @@ namespace XlsxText
 
         private void Load(ZipArchiveEntry archiveEntry)
         {
-            /*
+            /**
+             * <worksheet>
+             *     <sheetData>
+             *         <row r="1">
+             *              <c r="A1" s="11"><v>2</v></c>
+             *              <c r="B1" s="11"><v>3</v></c>
+             *              <c r="C1" s="11"><v>4</v></c>
+             *              <c r="D1" t="s"><v>0</v></c>
+             *              <c r="E1" t="inlineStr"><is><t>This is inline string example</t></is></c>
+             *              <c r="D1" t="d"><v>1976-11-22T08:30</v></c>
+             *              <c r="G1"><f>SUM(A1:A3)</f><v>9</v></c>
+             *              <c r="H1" s="11"/>
+             *          </row>
+             *     </sheetData>
+             * <worksheet>
+             */
+            using (XmlReader reader = XmlReader.Create(archiveEntry.Open()))
+            {
+                string[] names = new string[4];
+                long count = 0;
+                while (reader.Read())
+                {
+                    if (reader.NodeType == XmlNodeType.Element)
+                    {
+                        if (count < 4) names[count] = reader.Name;
+                        ++count;
+
+                        if (count == 3 && names[0] == "worksheet" && names[1] == "sheetData" && names[2] == "row")
+                        {
+                            ++RowCount;
+                        }
+                        else if (count == 4 && names[0] == "worksheet" && names[1] == "sheetData" && names[2] == "row" && names[3] == "c")
+                        {
+                            ++CellCount;
+                        }
+
+                        if (reader.IsEmptyElement) --count;
+                    }
+                    else if (reader.NodeType == XmlNodeType.EndElement)
+                    {
+                        --count;
+                    }
+                }
+            }
+
+            /**
              * <worksheet>
              *     <mergeCells count="5">
              *         <mergeCell ref="A1:B2"/>
@@ -157,7 +202,7 @@ namespace XlsxText
              *         <mergeCell ref="A8:XFD9"/>
              *     </mergeCells>
              * <worksheet>
-            */
+             */
             using (XmlReader reader = XmlReader.Create(archiveEntry.Open()))
             {
                 string[] names = new string[3];
@@ -184,6 +229,22 @@ namespace XlsxText
                 }
             }
 
+            /**
+             * <worksheet>
+             *     <sheetData>
+             *         <row r="1">
+             *              <c r="A1" s="11"><v>2</v></c>
+             *              <c r="B1" s="11"><v>3</v></c>
+             *              <c r="C1" s="11"><v>4</v></c>
+             *              <c r="D1" t="s"><v>0</v></c>
+             *              <c r="E1" t="inlineStr"><is><t>This is inline string example</t></is></c>
+             *              <c r="D1" t="d"><v>1976-11-22T08:30</v></c>
+             *              <c r="G1"><f>SUM(A1:A3)</f><v>9</v></c>
+             *              <c r="H1" s="11"/>
+             *          </row>
+             *     </sheetData>
+             * <worksheet>
+             */
             _reader = XmlReader.Create(archiveEntry.Open());
             if (!(_reader.ReadToDescendant("worksheet") && _reader.ReadToDescendant("sheetData")))
             {
@@ -202,7 +263,7 @@ namespace XlsxText
         private XmlReader _reader;
         public bool Read()
         {
-            /*
+            /**
              * <row r="1">
              *     <c r="A1" s="11"><v>2</v></c>
              *     <c r="B1" s="11"><v>3</v></c>
@@ -213,7 +274,7 @@ namespace XlsxText
              *     <c r="G1"><f>SUM(A1:A3)</f><v>9</v></c>
              *     <c r="H1" s="11"/>
              * </row>
-            */
+             */
             Row.Clear();
             string[] names = new string[4];
             long count = 0;
@@ -260,15 +321,11 @@ namespace XlsxText
                         value = _reader.Value;
                         if (type == "d")
                         {
-#if DEBUG
-                            Trace.TraceWarning("Can not parse the cell " + reference + "'s value of date type");
-#endif
+                            Debug.Print("Can not parse the cell " + reference + "'s value of date type");
                         }
                         else if (type == "e")
                         {
-#if DEBUG
-                            Trace.TraceWarning("Can not parse the cell " + reference + "'s value of error type");
-#endif
+                            Debug.Print("Can not parse the cell " + reference + "'s value of error type");
                         }
                         else if (type == "s")
                         {
@@ -288,10 +345,8 @@ namespace XlsxText
                             if (int.TryParse(style, out int styleId))
                             {
                                 value = GetNumFmtValue(styleId, rawValue);
-#if DEBUG
                                 if (value == null)
-                                    Trace.TraceWarning("Can not parse the cell " + reference + "'s value of NumberFormat type. Please replace with string type.");
-#endif
+                                    Debug.Print("Can not parse the cell " + reference + "'s value of NumberFormat type. Please replace with string type.");
                             }
                         }
 
@@ -396,7 +451,7 @@ namespace XlsxText
             {
                 if (stream != null)
                 {
-                    /*
+                    /**
                      * xl/styles.xml
                      * <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
                      *     <Relationship Id="rId8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
@@ -405,7 +460,7 @@ namespace XlsxText
                      *     <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
                      *     <Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
                      * </Relationships>
-                    */
+                     */
                     using (XmlReader reader = XmlReader.Create(stream))
                     {
                         string[] names = new string[2];
@@ -441,7 +496,7 @@ namespace XlsxText
             {
                 if (stream != null)
                 {
-                    /*
+                    /**
                      * <workbook>
                      *     <sheets>
                      *         <sheet name="Example1" sheetId="1" r:id="rId1"/>
@@ -450,7 +505,7 @@ namespace XlsxText
                      *         <sheet name="Example4" sheetId="8" r:id="rId4"/>
                      *     </sheets>
                      * <workbook>
-                    */
+                     */
                     using (XmlReader reader = XmlReader.Create(stream))
                     {
                         string[] names = new string[3];
@@ -485,13 +540,13 @@ namespace XlsxText
             {
                 if (stream != null)
                 {
-                    /*
+                    /**
                      * xl/sharedStrings.xml
                      * <sst>
                      *     <si><t>共享字符串1</t></si>
                      *     <si><r><t>共享富文本字符串1</t></r><r><t>共享富文本字符串2</t></r></si>
                      * </sst>
-                    */
+                     */
                     using (XmlReader reader = XmlReader.Create(stream))
                     {
                         string[] names = new string[4];
@@ -538,7 +593,7 @@ namespace XlsxText
             {
                 if (stream != null)
                 {
-                    /*
+                    /**
                      * xl/styles.xml
                      * <styleSheet>
                      *     <numFmts count="2">
@@ -551,7 +606,7 @@ namespace XlsxText
                      *         <xf numFmtId="20" fontId="0" fillId="0" borderId="0" xfId="0" quotePrefix="1" applyNumberFormat="1"/>
                      *     </cellXfs>
                      * </styleSheet>
-                    */
+                     */
                     using (XmlReader reader = XmlReader.Create(stream))
                     {
                         string[] names = new string[3];
