@@ -110,7 +110,7 @@ namespace XlsxText
         }
     }
 
-    public class XlsxTextSheetReader
+    public class XlsxTextSheetReader : IDisposable
     {
         public XlsxTextReader Archive { get; private set; }
         public string Name { get; private set; }
@@ -244,6 +244,7 @@ namespace XlsxText
             if (!(_reader.ReadToDescendant("worksheet") && _reader.ReadToDescendant("sheetData")))
             {
                 _reader.Close();
+                _reader = null;
             }
         }
         public string GetNumFmtValue(int cellStyle, string rawValue)
@@ -275,7 +276,7 @@ namespace XlsxText
             long count = 0;
             long rowIndex;
             string reference = "", value = "", type = "", style = "";
-            while (_reader.Read())
+            while (_reader != null && _reader.Read())
             {
                 if (_reader.NodeType == XmlNodeType.Element)
                 {
@@ -366,6 +367,15 @@ namespace XlsxText
             }
 
             return false;
+        }
+
+        public void Dispose()
+        {
+            Row.Clear();
+            _mergeCells.Clear();
+            _reader?.Dispose();
+            _reader = null;
+            Archive = null;
         }
     }
     public class XlsxTextReader : IDisposable
@@ -640,22 +650,29 @@ namespace XlsxText
 
         public XlsxTextSheetReader SheetReader { get; private set; }
         private int _readIndex = 0;
+
         public bool Read()
         {
             SheetReader = null;
             if (_readIndex < SheetsCount)
             {
                 // create a sheet reader
+                SheetReader?.Dispose();
                 SheetReader = XlsxTextSheetReader.Create(this, _sheets[_readIndex].Key, _archive.GetEntry(_sheets[_readIndex].Value));
                 ++_readIndex;
                 return true;
             }
             return false;
         }
+
         public void Dispose()
         {
+            _rels.Clear();
+            _sheets.Clear();
+            _sharedStrings.Clear();
+            _numFmts?.Clear();
+            _cellXfs.Clear();
             _archive.Dispose();
         }
     }
-
 }
