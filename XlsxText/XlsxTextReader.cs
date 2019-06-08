@@ -257,7 +257,7 @@ namespace XlsxText
             if (formatCode == XlsxTextReader.StandardNumFmts[0])
                 return rawValue;
             else
-                return null;
+                return rawValue;
         }
 
         private XmlReader _reader;
