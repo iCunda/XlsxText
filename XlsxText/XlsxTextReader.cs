@@ -98,20 +98,15 @@ namespace XlsxText
         /// </summary>
         public long Col => Reference.Col;
 
-        private string _value = "";
         /// <summary>
         /// Value of cell
         /// </summary>
-        public string Value
-        {
-            get => _value;
-            private set => _value = value ?? "";
-        }
+        public string Value { get; private set; }
 
         internal XlsxTextCell(string reference, string value)
         {
             Reference = new XlsxTextCellReference(reference);
-            Value = value;
+            Value = value ?? "";
         }
     }
 
