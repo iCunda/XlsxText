@@ -8,29 +8,30 @@ namespace XlsxText.Example
         public const string ResourcePath = "../../../Resource";
         static void Main(string[] args)
         {
-            XlsxTextReader xlsx = XlsxTextReader.Create(ResourcePath + "/example.xlsx");
-            while (xlsx.Read())
+            using (XlsxTextReader xlsx = XlsxTextReader.Create(ResourcePath + "/example.xlsx"))
             {
-                Stopwatch sw = new Stopwatch();
-                sw.Start();
-                XlsxTextSheetReader sheetReader = xlsx.SheetReader;
-                Console.WriteLine("Sheet Name: " + sheetReader.Name + ", 行数: " + sheetReader.RowCount + ", 单元格数: " + sheetReader.CellCount);
-
-                while (sheetReader.Read())
+                while (xlsx.Read())
                 {
-                    if (sheetReader.Row.Count == 0)
-                        continue;
-                    foreach (var cell in sheetReader.Row)
+                    Stopwatch sw = new Stopwatch();
+                    sw.Start();
+                    XlsxTextSheetReader sheetReader = xlsx.SheetReader;
+                    Console.WriteLine("Sheet Name: " + sheetReader.Name + ", 行数: " + sheetReader.RowCount + ", 单元格数: " + sheetReader.CellCount);
+
+                    while (sheetReader.Read())
                     {
-                        Console.Write(cell.Value + "\t");
+                        if (sheetReader.Row.Count == 0)
+                            continue;
+                        foreach (var cell in sheetReader.Row)
+                        {
+                            Console.Write(cell.Value + "\t");
+                        }
+                        Console.WriteLine();
                     }
                     Console.WriteLine();
+                    sw.Stop();
+                    Console.WriteLine("sw总共花费{0}ms.", sw.Elapsed.TotalMilliseconds);
                 }
-                Console.WriteLine();
-                sw.Stop();
-                Console.WriteLine("sw总共花费{0}ms.", sw.Elapsed.TotalMilliseconds);
             }
-
             Console.ReadKey();
         }
     }

@@ -373,7 +373,7 @@ namespace XlsxText
             return false;
         }
     }
-    public class XlsxTextReader
+    public class XlsxTextReader : IDisposable
     {
         public const string RelationshipPart = "xl/_rels/workbook.xml.rels";
         public const string WorkbookPart = "xl/workbook.xml";
@@ -657,5 +657,10 @@ namespace XlsxText
             }
             return false;
         }
+        public void Dispose()
+        {
+            _archive.Dispose();
+        }
     }
+
 }
