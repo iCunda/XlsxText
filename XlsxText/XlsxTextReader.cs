@@ -28,11 +28,11 @@ namespace XlsxText
                 if (rowValue == "" || colValue == "")
                     throw new Exception("Invalid value of cell reference");
 
-                long row;
-                if (!long.TryParse(rowValue, out row) || row < 1)
+                int row;
+                if (!int.TryParse(rowValue, out row) || row < 1)
                     throw new Exception("Invalid value of cell reference");
 
-                long col = 0;
+                int col = 0;
                 for (int i = colValue.Length - 1, multiple = 1; i >= 0; --i, multiple *= 26)
                 {
                     int n = colValue[i] - 'A' + 1;
@@ -47,11 +47,11 @@ namespace XlsxText
         /// <summary>
         /// Number of rows, starting from 1
         /// </summary>
-        public long Row { get; private set; }
+        public int Row { get; private set; }
         /// <summary>
         /// Number of columns, starting from 1
         /// </summary>
-        public long Col { get; private set; }
+        public int Col { get; private set; }
 
         public XlsxTextCellReference(string value)
         {
@@ -92,11 +92,11 @@ namespace XlsxText
         /// <summary>
         /// Number of rows, starting from 1
         /// </summary>
-        public long Row => Reference.Row;
+        public int Row => Reference.Row;
         /// <summary>
         /// Number of columns, starting from 1
         /// </summary>
-        public long Col => Reference.Col;
+        public int Col => Reference.Col;
 
         /// <summary>
         /// Value of cell
@@ -115,7 +115,7 @@ namespace XlsxText
         public XlsxTextReader Archive { get; private set; }
         public string Name { get; private set; }
         public long CellCount { get; private set; } = 0;
-        public long RowCount { get; private set; } = 0;
+        public int RowCount { get; private set; } = 0;
 
         private Dictionary<string, KeyValuePair<string, string>> _mergeCells = new Dictionary<string, KeyValuePair<string, string>>();
         public List<XlsxTextCell> Row { get; private set; } = new List<XlsxTextCell>();
@@ -273,8 +273,8 @@ namespace XlsxText
              */
             Row.Clear();
             string[] names = new string[4];
-            long count = 0;
-            long rowIndex;
+            int count = 0;
+            int rowIndex;
             string reference = "", value = "", type = "", style = "";
             while (_reader != null && _reader.Read())
             {
@@ -284,7 +284,7 @@ namespace XlsxText
                     ++count;
 
                     if (count == 1 && names[0] == "row")
-                        long.TryParse(_reader["r"], out rowIndex);
+                        int.TryParse(_reader["r"], out rowIndex);
                     if (count == 2 && names[0] == "row" && names[1] == "c")
                     {
                         reference = _reader["r"] ?? "";
@@ -469,7 +469,7 @@ namespace XlsxText
                     using (XmlReader reader = XmlReader.Create(stream))
                     {
                         string[] names = new string[2];
-                        long count = 0;
+                        int count = 0;
                         while (reader.Read())
                         {
                             if (reader.NodeType == XmlNodeType.Element)
@@ -514,7 +514,7 @@ namespace XlsxText
                     using (XmlReader reader = XmlReader.Create(stream))
                     {
                         string[] names = new string[3];
-                        long count = 0;
+                        int count = 0;
                         while (reader.Read())
                         {
                             if (reader.NodeType == XmlNodeType.Element)
@@ -555,7 +555,7 @@ namespace XlsxText
                     using (XmlReader reader = XmlReader.Create(stream))
                     {
                         string[] names = new string[4];
-                        long count = 0;
+                        int count = 0;
                         string expr = "";
                         while (reader.Read())
                         {
@@ -615,7 +615,7 @@ namespace XlsxText
                     using (XmlReader reader = XmlReader.Create(stream))
                     {
                         string[] names = new string[3];
-                        long count = 0;
+                        int count = 0;
                         while (reader.Read())
                         {
                             if (reader.NodeType == XmlNodeType.Element)
