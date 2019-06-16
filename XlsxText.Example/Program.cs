@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 
 namespace XlsxText.Example
@@ -8,30 +9,29 @@ namespace XlsxText.Example
         public const string ResourcePath = "../../../Resource";
         static void Main(string[] args)
         {
-            using (XlsxTextReader xlsx = XlsxTextReader.Create(ResourcePath + "/example.xlsx"))
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
+            using (Workbook workbook = new Workbook(ResourcePath + "/example.xlsx"))
             {
-                while (xlsx.Read())
+                Worksheet worksheet;
+                while (workbook.Read(out worksheet))
                 {
-                    Stopwatch sw = new Stopwatch();
-                    sw.Start();
-                    XlsxTextSheetReader sheetReader = xlsx.SheetReader;
-                    Console.WriteLine("Sheet Name: " + sheetReader.Name + ", 行数: " + sheetReader.RowCount + ", 单元格数: " + sheetReader.CellCount);
+                    Console.WriteLine("Sheet Name: " + worksheet.Name + ", 行数: " + worksheet.RowCount);
 
-                    while (sheetReader.Read())
+                    List<Cell> row;
+                    while (worksheet.Read(out row))
                     {
-                        if (sheetReader.Row.Count == 0)
-                            continue;
-                        foreach (var cell in sheetReader.Row)
+                        foreach (var cell in row)
                         {
                             Console.Write(cell.Value + "\t");
                         }
                         Console.WriteLine();
                     }
                     Console.WriteLine();
-                    sw.Stop();
-                    Console.WriteLine("sw总共花费{0}ms.", sw.Elapsed.TotalMilliseconds);
                 }
             }
+            sw.Stop();
+            Console.WriteLine("总共消耗{0}ms.", sw.Elapsed.TotalMilliseconds);
             Console.ReadKey();
         }
     }
