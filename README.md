@@ -4,22 +4,20 @@ Quickly read the text in *.xlsx.
 ----------
 example：
 
-    XlsxTextReader xlsx = XlsxTextReader.Create(@"D:\example.xlsx");
-    while (xlsx.Read())
+    using (Workbook workbook = new Workbook(ResourcePath + "/example.xlsx"))
     {
-        XlsxTextSheetReader sheetReader = xlsx.SheetReader;
-        Console.WriteLine("Sheet Name: " + sheetReader.Name);
-
-        while (sheetReader.Read())
+        while (workbook.Read(out Worksheet worksheet))
         {
-            if (sheetReader.Row.Count == 0)
-                continue;
-            foreach (var cell in sheetReader.Row)
+            Console.WriteLine("Sheet Name: " + worksheet.Name + ", 行数: " + worksheet.RowCount);
+            while (worksheet.Read(out List<Cell> row))
             {
-                Console.Write(cell.Value + "\t");
+                foreach (var cell in row)
+                {
+                    Console.Write(cell.Value + "\t");
+                }
+                Console.WriteLine();
             }
             Console.WriteLine();
         }
-        Console.WriteLine();
     }
     Console.ReadKey();
