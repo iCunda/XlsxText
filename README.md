@@ -4,7 +4,7 @@ Quickly read the text in *.xlsx.
 ----------
 example：
 
-    using (Workbook workbook = new Workbook(ResourcePath + "/example.xlsx"))
+    using (Workbook workbook = new Workbook("D:/example.xlsx"))
     {
         while (workbook.Read(out Worksheet worksheet))
         {
