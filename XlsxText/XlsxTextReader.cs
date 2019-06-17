@@ -470,7 +470,7 @@ namespace XlsxText
 
         private readonly ZipArchive _archive;
         private Dictionary<string, string> _rels;
-        private List<KeyValuePair<string, string>> _sheets;
+        private List<KeyValuePair<string, string>> _worksheets;
         private List<string> _sharedStrings;
         private Dictionary<int, string> _numFmts;
         private List<int> _cellXfs;
@@ -532,7 +532,7 @@ namespace XlsxText
                 }
             }
 
-            _sheets = new List<KeyValuePair<string, string>>();
+            _worksheets = new List<KeyValuePair<string, string>>();
             using (Stream stream = _archive?.GetEntry(WorkbookPart)?.Open())
             {
                 if (stream != null)
@@ -565,7 +565,7 @@ namespace XlsxText
                                         flags[2] = reader.Name == "sheet" ? 3 : 0;
 
                                     if (depth == 2 && flags[0] == 1 && flags[1] == 2 && flags[2] == 3)
-                                        _sheets.Add(new KeyValuePair<string, string>(reader["name"], _rels[reader["r:id"]]));
+                                        _worksheets.Add(new KeyValuePair<string, string>(reader["name"], _rels[reader["r:id"]]));
 
                                     if (!reader.IsEmptyElement) ++depth;
                                     break;
@@ -718,6 +718,11 @@ namespace XlsxText
             return null;
         }
 
+        /// <summary>
+        /// 工作表数量
+        /// </summary>
+        public int WorksheetCount => _worksheets.Count;
+
         private int _readIndex = 0;
         /// <summary>
         /// 读取一张表
@@ -726,9 +731,9 @@ namespace XlsxText
         public bool Read(out Worksheet sheet)
         {
             sheet = null;
-            if (_readIndex < _sheets.Count)
+            if (_readIndex < _worksheets.Count)
             {
-                sheet = new Worksheet(this, _sheets[_readIndex].Key, _archive.GetEntry(_sheets[_readIndex].Value));
+                sheet = new Worksheet(this, _worksheets[_readIndex].Key, _archive.GetEntry(_worksheets[_readIndex].Value));
                 ++_readIndex;
                 return true;
             }
@@ -740,7 +745,7 @@ namespace XlsxText
             _cellXfs.Clear();
             _numFmts.Clear();
             _sharedStrings.Clear();
-            _sheets.Clear();
+            _worksheets.Clear();
             _rels.Clear();
             _archive.Dispose();
         }
