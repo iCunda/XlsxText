@@ -420,11 +420,14 @@ namespace XlsxText
             return false;
         }
 
-        public void Dispose()
+        public void Close()
         {
             _mergeCells.Clear();
+            _reader?.Close();
             Workbook = null;
         }
+
+        public void Dispose() => Close();
     }
 
     /// <summary>
@@ -740,7 +743,7 @@ namespace XlsxText
             return false;
         }
 
-        public void Dispose()
+        public void Close()
         {
             _cellXfs.Clear();
             _numFmts.Clear();
@@ -749,5 +752,7 @@ namespace XlsxText
             _rels.Clear();
             _archive.Dispose();
         }
+
+        public void Dispose() => Close();
     }
 }
