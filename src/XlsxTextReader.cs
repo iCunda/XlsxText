@@ -204,13 +204,35 @@ namespace XlsxTextReader
                     _mergeCells = new List<Cell>();
                     using (XmlReader reader = XmlReader.Create(_part.Open()))
                     {
-                        if (reader.ReadToNextSibling("worksheet") && reader.ReadToDescendant("mergeCells") && reader.ReadToDescendant("mergeCell"))
+                        int[] tree = { 0, 0 };
+                        bool read = false;
+                        while (!read && reader.Read())
                         {
-                            do
+                            switch (reader.NodeType)
                             {
-                                string[] refs = reader["ref"].Split(':');
-                                _mergeCells.Add(new Cell(new Reference(refs[0]), null, new Reference(refs[1])));
-                            } while (reader.ReadToNextSibling("mergeCell"));
+                                case XmlNodeType.Element:
+                                    switch (reader.Depth)
+                                    {
+                                        case 0:
+                                            tree[0] = reader.Name == "worksheet" ? 1 : 0;
+                                            break;
+                                        case 1:
+                                            tree[1] = reader.Name == "mergeCells" ? 1 : 0;
+                                            break;
+                                        case 2:
+                                            if (tree[0] == 1 && tree[1] == 1 && reader.Name == "mergeCell")
+                                            {
+                                                string[] refs = reader["ref"].Split(':');
+                                                _mergeCells.Add(new Cell(new Reference(refs[0]), null, new Reference(refs[1])));
+                                            }
+                                            break;
+                                    }
+                                    break;
+                                case XmlNodeType.EndElement:
+                                    if (tree[0] == 1 && tree[1] == 1 && reader.Depth == 1)
+                                        read = true;
+                                    break;
+                            }
                         }
                     }
                 }
@@ -243,110 +265,157 @@ namespace XlsxTextReader
                      */
                     using (XmlReader reader = XmlReader.Create(_part.Open()))
                     {
-                        if (reader.ReadToNextSibling("worksheet") && reader.ReadToDescendant("sheetData") && reader.ReadToDescendant("row"))
+                        int[] tree = { 0, 0, 0, 0, 0, 0 };
+                        bool read = false;
+                        List<Cell> rowCells = null, mergeCells = null;
+                        string r = null, t = null, s = null, v = null;
+                        while (!read && reader.Read())
                         {
-                            do
+                            switch (reader.NodeType)
                             {
-                                if (reader.ReadToDescendant("c"))
-                                {
-                                    List<Cell> row = new List<Cell>();
-                                    do
+                                case XmlNodeType.Element:
+                                    switch (reader.Depth)
                                     {
-                                        string r = reader["r"], t = reader["t"], s = reader["s"], v = null;
-
-                                        if (!reader.IsEmptyElement)
-                                        {
-                                            int[] tree = { 0, 0 };
-                                            int depth = 0;
-                                            while (reader.Read())
+                                        case 0:
+                                            tree[0] = reader.Name == "worksheet" ? 1 : 0;
+                                            break;
+                                        case 1:
+                                            tree[1] = reader.Name == "sheetData" ? 1 : 0;
+                                            break;
+                                        case 2:
+                                            tree[2] = reader.Name == "row" ? 1 : 0;
+                                            if (tree[0] == 1 && tree[1] == 1 && tree[2] == 1)
                                             {
-                                                switch (reader.NodeType)
+                                                rowCells = new List<Cell>();
+                                                mergeCells = new List<Cell>();
+
+                                                int row = int.Parse(reader["r"]);
+                                                foreach (Cell mergeCell in _mergeCells)
                                                 {
-                                                    case XmlNodeType.Element:
-                                                        switch (depth)
-                                                        {
-                                                            case 0:
-                                                                tree[0] = reader.Name == "v" ? 1 : reader.Name == "is" ? 2 : 0;
-                                                                break;
-                                                            case 1:
-                                                                tree[1] = reader.Name == "t" ? 1 : 0;
-                                                                break;
-                                                        }
-                                                        if (!reader.IsEmptyElement) ++depth;
-                                                        break;
-                                                    case XmlNodeType.EndElement:
-                                                        --depth;
-                                                        break;
-                                                    case XmlNodeType.SignificantWhitespace:
-                                                    case XmlNodeType.Text:
-                                                        switch (depth)
-                                                        {
-                                                            case 1:
-                                                                if (tree[0] == 1)
-                                                                    v = reader.Value;
-                                                                break;
-                                                            case 2:
-                                                                if (tree[0] == 2 && tree[1] == 1)
-                                                                    v = v == null ? reader.Value : v + reader.Value;
-                                                                break;
-                                                        }
-                                                        break;
+                                                    if (mergeCell.Reference.Row <= row && row <= mergeCell.EndReference.Row)
+                                                        mergeCells.Add(mergeCell);
                                                 }
-                                                if (depth < 0)
-                                                    break;
                                             }
-                                        }
-
-                                        string value;
-                                        switch (t)
-                                        {
-                                            case "n":
-                                            case "str":
-                                            case "inlineStr":
-                                                value = v;
-                                                break;
-                                            case "b":
-                                                value = v == "0" ? "FALSE" : "TRUE";
-                                                break;
-                                            case "s":
-                                                value = Workbook._sharedStrings[int.Parse(v)];
-                                                break;
-                                            case "e":
-                                                throw new Exception(r + ": 单元格有错误");
-                                            case "d":
-                                                throw new Exception(r + ": 不支持解析时间类型的值");
-                                            case null:
-                                                if (s != null && v != null)
-                                                {
-                                                    string formatCode = Workbook._numFmts[Workbook._cellXfs[int.Parse(s)]];
-                                                    if (formatCode == BuiltinNumFmts[0] || formatCode == BuiltinNumFmts[49])
-                                                        value = v;
-                                                    else
-                                                        throw new Exception(r + ": 不支持解析: " + formatCode);
-                                                }
+                                            break;
+                                        case 3:
+                                            tree[3] = reader.Name == "c" ? 1 : 0;
+                                            if (tree[0] == 1 && tree[1] == 1 && tree[2] == 1 && tree[3] == 1)
+                                            {
+                                                r = reader["r"];
+                                                t = reader["t"];
+                                                s = reader["s"];
+                                                v = null;
+                                            }
+                                            break;
+                                        case 4:
+                                            tree[4] = reader.Name == "v" ? 1 : reader.Name == "is" ? 2 : 0;
+                                            break;
+                                        case 5:
+                                            tree[5] = reader.Name == "t" ? 1 : 0;
+                                            break;
+                                    }
+                                    break;
+                                case XmlNodeType.EndElement:
+                                    switch (reader.Depth)
+                                    {
+                                        case 1:
+                                            if (tree[0] == 1 && tree[1] == 1)
+                                                read = true;
+                                            break;
+                                        case 2:
+                                            if (tree[0] == 1 && tree[1] == 1 && tree[2] == 1)
+                                            {
+                                                if (mergeCells.Count == 0)
+                                                    yield return rowCells;
                                                 else
-                                                    value = v;
-                                                break;
-                                            default:
-                                                throw new Exception(r + ": 不支持类型: " + t);
-                                        }
+                                                {
+                                                    List<Cell> newRowCells = new List<Cell>();
+                                                    short i1 = 0, i2 = 0;
+                                                    while (i1 < rowCells.Count || i2 < mergeCells.Count)
+                                                    {
+                                                        if (i1 < rowCells.Count)
+                                                        {
+                                                            if (i2 >= mergeCells.Count || rowCells[i1].Reference.Column < mergeCells[i2].Reference.Column)
+                                                                newRowCells.Add(rowCells[i1]);
+                                                            ++i1;
+                                                        }
+                                                        if (i2 < mergeCells.Count)
+                                                        {
+                                                            if (i1 >= rowCells.Count || rowCells[i1].Reference.Column > mergeCells[i2].EndReference.Column)
+                                                            {
+                                                                for (short col = mergeCells[i2].Reference.Column; col <= mergeCells[i2].EndReference.Column; ++col)
+                                                                    newRowCells.Add(new Cell(mergeCells[i2].Reference, mergeCells[i2].Value, mergeCells[i2].EndReference));
+                                                                ++i2;
+                                                            }
+                                                        }
+                                                    }
+                                                    yield return newRowCells;
+                                                }
+                                            }
+                                            break;
+                                        case 3:
+                                            if (tree[0] == 1 && tree[1] == 1 && tree[2] == 1 && tree[3] == 1)
+                                            {
+                                                string value;
+                                                switch (t)
+                                                {
+                                                    case "n":
+                                                    case "str":
+                                                    case "inlineStr":
+                                                        value = v;
+                                                        break;
+                                                    case "b":
+                                                        value = v == "0" ? "FALSE" : "TRUE";
+                                                        break;
+                                                    case "s":
+                                                        value = Workbook._sharedStrings[int.Parse(v)];
+                                                        break;
+                                                    case "e":
+                                                        throw new Exception(r + ": 单元格有错误");
+                                                    case "d":
+                                                        throw new Exception(r + ": 不支持解析时间类型的值");
+                                                    case null:
+                                                        if (s != null && v != null)
+                                                        {
+                                                            string formatCode = Workbook._numFmts[Workbook._cellXfs[int.Parse(s)]];
+                                                            if (formatCode == BuiltinNumFmts[0] || formatCode == BuiltinNumFmts[49])
+                                                                value = v;
+                                                            else
+                                                                throw new Exception(r + ": 不支持解析: " + formatCode);
+                                                        }
+                                                        else
+                                                            value = v;
+                                                        break;
+                                                    default:
+                                                        throw new Exception(r + ": 不支持类型: " + t);
+                                                }
 
-                                        Cell cell = new Cell(new Reference(r), value);
-                                        foreach (Cell mergeCell in _mergeCells)
-                                        {
-                                            if (mergeCell.Reference.Row == cell.Reference.Row && mergeCell.Reference.Column == cell.Reference.Column)
-                                                mergeCell.Value = cell.Value;
-                                            else if (mergeCell.Reference.Row <= cell.Reference.Row && cell.Reference.Row <= mergeCell.EndReference.Row
-                                                && mergeCell.Reference.Column <= cell.Reference.Column && cell.Reference.Column <= mergeCell.EndReference.Column)
-                                                cell = new Cell(cell.Reference, mergeCell.Value, new Reference(mergeCell.EndReference.Row, mergeCell.EndReference.Column));
-                                        }
-                                        row.Add(cell);
-
-                                    } while (reader.ReadToNextSibling("c"));
-                                    if (row.Count > 0)
-                                        yield return row;
-                                }
-                            } while (reader.ReadToNextSibling("row"));
+                                                Cell cell = new Cell(new Reference(r), value);
+                                                foreach (Cell mergeCell in mergeCells)
+                                                {
+                                                    if (mergeCell.Reference.Row == cell.Reference.Row && mergeCell.Reference.Column == cell.Reference.Column)
+                                                        mergeCell.Value = cell.Value;
+                                                }
+                                                rowCells.Add(cell);
+                                            }
+                                            break;
+                                    }
+                                    break;
+                                case XmlNodeType.SignificantWhitespace:
+                                case XmlNodeType.Text:
+                                    switch (reader.Depth)
+                                    {
+                                        case 5:
+                                            if (tree[0] == 1 && tree[1] == 1 && tree[2] == 1 && tree[3] == 1 && tree[4] == 1)
+                                                v = reader.Value;
+                                            break;
+                                        case 6:
+                                            if (tree[0] == 1 && tree[1] == 1 && tree[2] == 1 && tree[3] == 1 && tree[4] == 2 && tree[5] == 1)
+                                                v = v == null ? reader.Value : v + reader.Value;
+                                            break;
+                                    }
+                                    break;
+                            }
                         }
                     }
                 }
@@ -372,11 +441,24 @@ namespace XlsxTextReader
                      */
                     using (XmlReader reader = XmlReader.Create(stream))
                     {
-                        if (reader.ReadToNextSibling("Relationships") && reader.ReadToDescendant("Relationship"))
+                        int[] tree = { 0 };
+                        while (reader.Read())
                         {
-                            do
-                                _rels.Add(reader["Id"], "xl/" + reader["Target"]);
-                            while (reader.ReadToNextSibling("Relationship"));
+                            switch (reader.NodeType)
+                            {
+                                case XmlNodeType.Element:
+                                    switch (reader.Depth)
+                                    {
+                                        case 0:
+                                            tree[0] = reader.Name == "Relationships" ? 1 : 0;
+                                            break;
+                                        case 1:
+                                            if (tree[0] == 1 && reader.Name == "Relationship")
+                                                _rels.Add(reader["Id"], "xl/" + reader["Target"]);
+                                            break;
+                                    }
+                                    break;
+                            }
                         }
                     }
                 }
@@ -397,11 +479,32 @@ namespace XlsxTextReader
                      */
                     using (XmlReader reader = XmlReader.Create(stream))
                     {
-                        if (reader.ReadToNextSibling("workbook") && reader.ReadToDescendant("sheets") && reader.ReadToDescendant("sheet"))
+                        int[] tree = { 0, 0 };
+                        bool read = false;
+                        while (!read && reader.Read())
                         {
-                            do
-                                _worksheets.Add(reader["name"], _rels[reader["r:id"]]);
-                            while (reader.ReadToNextSibling("sheet"));
+                            switch (reader.NodeType)
+                            {
+                                case XmlNodeType.Element:
+                                    switch (reader.Depth)
+                                    {
+                                        case 0:
+                                            tree[0] = reader.Name == "workbook" ? 1 : 0;
+                                            break;
+                                        case 1:
+                                            tree[1] = reader.Name == "sheets" ? 1 : 0;
+                                            break;
+                                        case 2:
+                                            if (tree[0] == 1 && tree[1] == 1 && reader.Name == "sheet")
+                                                _worksheets.Add(reader["name"], _rels[reader["r:id"]]);
+                                            break;
+                                    }
+                                    break;
+                                case XmlNodeType.EndElement:
+                                    if (tree[0] == 1 && tree[1] == 1 && reader.Depth == 1)
+                                        read = true;
+                                    break;
+                            }
                         }
                     }
                 }
@@ -431,13 +534,12 @@ namespace XlsxTextReader
                         {
                             string value = "";
                             int[] tree = { 0, 0, 0, 0 };
-                            int depth = 0;
                             while (reader.Read())
                             {
                                 switch (reader.NodeType)
                                 {
                                     case XmlNodeType.Element:
-                                        switch (depth)
+                                        switch (reader.Depth)
                                         {
                                             case 0:
                                                 tree[0] = reader.Name == "sst" ? 1 : 0;
@@ -452,19 +554,17 @@ namespace XlsxTextReader
                                                 tree[3] = reader.Name == "t" ? 1 : 0;
                                                 break;
                                         }
-                                        if (!reader.IsEmptyElement) ++depth;
                                         break;
                                     case XmlNodeType.EndElement:
-                                        if (depth == 2 && tree[0] == 1 && tree[1] == 1)
+                                        if (tree[0] == 1 && tree[1] == 1 && reader.Depth == 1)
                                         {
                                             _sharedStrings.Add(value);
                                             value = "";
                                         }
-                                        --depth;
                                         break;
                                     case XmlNodeType.SignificantWhitespace:
                                     case XmlNodeType.Text:
-                                        switch (depth)
+                                        switch (reader.Depth)
                                         {
                                             case 3:
                                                 if (tree[0] == 1 && tree[1] == 1 && tree[2] == 1)
@@ -504,36 +604,35 @@ namespace XlsxTextReader
                          */
                         using (XmlReader reader = XmlReader.Create(stream))
                         {
-                            if (reader.ReadToNextSibling("styleSheet"))
+                            int[] tree = { 0, 0 };
+                            bool read1 = false, read2 = false;
+                            while ((!read1 || !read2) && reader.Read())
                             {
-                                bool nfmtRead = false, xfsRead = false;
-                                while (reader.Read() && (!nfmtRead || !xfsRead))
+                                switch (reader.NodeType)
                                 {
-                                    if (reader.NodeType == XmlNodeType.Element)
-                                    {
-                                        if (reader.Name == "numFmts")
+                                    case XmlNodeType.Element:
+                                        switch (reader.Depth)
                                         {
-                                            if (reader.ReadToDescendant("numFmt"))
-                                            {
-                                                do
+                                            case 0:
+                                                tree[0] = reader.Name == "styleSheet" ? 1 : 0;
+                                                break;
+                                            case 1:
+                                                tree[1] = reader.Name == "numFmts" ? 1 : reader.Name == "cellXfs" ? 2 : 0;
+                                                break;
+                                            case 2:
+                                                if (tree[0] == 1 && tree[1] == 1 && reader.Name == "numFmt")
                                                     _numFmts[int.Parse(reader["numFmtId"])] = reader["formatCode"];
-                                                while (reader.ReadToNextSibling("numFmt"));
-                                            }
-                                            nfmtRead = true;
-                                        }
-                                        else if (reader.Name == "cellXfs")
-                                        {
-                                            if (reader.ReadToDescendant("xf"))
-                                            {
-                                                do
+                                                else if (tree[0] == 1 && tree[1] == 2 && reader.Name == "xf")
                                                     _cellXfs.Add(int.Parse(reader["numFmtId"]));
-                                                while (reader.ReadToNextSibling("xf"));
-                                            }
-                                            xfsRead = true;
+                                                break;
                                         }
-                                        else
-                                            reader.Skip();
-                                    }
+                                        break;
+                                    case XmlNodeType.EndElement:
+                                        if (tree[0] == 1 && tree[1] == 1 && reader.Depth == 1)
+                                            read1 = true;
+                                        else if (tree[0] == 1 && tree[1] == 2 && reader.Depth == 1)
+                                            read2 = true;
+                                        break;
                                 }
                             }
                         }
