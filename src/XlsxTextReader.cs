@@ -111,25 +111,39 @@ namespace XlsxTextReader
         public Reference Reference { get; }
 
         /// <summary>
-        /// 合并单元格末端引用
-        /// </summary>
-        public Reference EndReference { get; }
-
-        /// <summary>
-        /// 是否是合并单元格
-        /// </summary>
-        public bool isMergeCell { get => EndReference.Row >= Reference.Row && EndReference.Column >= Reference.Column && (EndReference.Row > Reference.Row || EndReference.Column > Reference.Column); }
-
-        /// <summary>
         /// 值
         /// </summary>
         public string Value { get; set; }
 
-        public Cell(Reference reference, string value, Reference endReference = null)
+        public Cell(Reference reference, string value)
         {
             Reference = reference;
-            EndReference = endReference ?? reference;
             Value = value;
+        }
+    }
+
+    /// <summary>
+    /// 合并单元格
+    /// </summary>
+    public class MergeCell : Cell
+    {
+        /// <summary>
+        /// 始点单元格引用
+        /// </summary>
+        public Reference Begin { get; }
+        /// <summary>
+        /// 末点单元格引用
+        /// </summary>
+        public Reference End { get; }
+        public MergeCell(Reference reference, string value, Reference end) : base(reference, value)
+        {
+            Begin = reference;
+            End = end;
+        }
+        public MergeCell(Reference reference, string value, Reference begin, Reference end) : base(reference, value)
+        {
+            Begin = begin;
+            End = end;
         }
     }
 
@@ -146,7 +160,14 @@ namespace XlsxTextReader
         /// 工作表名称
         /// </summary>
         public string Name { get; }
-
+        /// <summary>
+        /// 最大行号，负数为无限制
+        /// </summary>
+        public int MaxRow = -1;
+        /// <summary>
+        /// 最大列号，负数为无限制
+        /// </summary>
+        public short MaxColumn = -1;
         protected Worksheet(Workbook workbook, string name)
         {
             Workbook = workbook;
@@ -173,7 +194,7 @@ namespace XlsxTextReader
             /// <summary>
             /// 合并单元格
             /// </summary>
-            private List<Cell> _mergeCells;
+            private MergeCell[] _mergeCells;
 
             public WorksheetImpl(WorkbookImpl workbook, string name, ZipArchiveEntry part) : base(workbook, name) => _part = part;
 
@@ -202,11 +223,12 @@ namespace XlsxTextReader
                  *     </mergeCells>
                  * <worksheet>
                  */
-                _mergeCells = new List<Cell>();
+                _mergeCells = new MergeCell[0];
                 using (XmlReader reader = XmlReader.Create(_part.Open()))
                 {
                     int[] tree = { 0, 0 };
                     bool read = false;
+                    int count = 0;
                     while (!read && reader.Read())
                     {
                         switch (reader.NodeType)
@@ -219,12 +241,14 @@ namespace XlsxTextReader
                                         break;
                                     case 1:
                                         tree[1] = reader.Name == "mergeCells" ? 1 : 0;
+                                        if (tree[0] == 1 && tree[1] == 1)
+                                            _mergeCells = new MergeCell[int.Parse(reader["count"])];
                                         break;
                                     case 2:
                                         if (tree[0] == 1 && tree[1] == 1 && reader.Name == "mergeCell")
                                         {
                                             string[] refs = reader["ref"].Split(':');
-                                            _mergeCells.Add(new Cell(new Reference(refs[0]), null, new Reference(refs[1])));
+                                            _mergeCells[count++] = new MergeCell(new Reference(refs[0]), null, new Reference(refs[1]));
                                         }
                                         break;
                                 }
@@ -267,10 +291,11 @@ namespace XlsxTextReader
                 using (XmlReader reader = XmlReader.Create(_part.Open()))
                 {
                     int[] tree = { 0, 0, 0, 0, 0, 0 };
-                    bool read = false;
-                    List<Cell> rowCells = null, mergeCells = null;
+                    bool eof = false;
+                    int row = 0;
+                    List<Cell> rowCells = null;
                     string r = null, t = null, s = null, v = null;
-                    while (!read && reader.Read())
+                    while (!eof && reader.Read())
                     {
                         switch (reader.NodeType)
                         {
@@ -287,15 +312,8 @@ namespace XlsxTextReader
                                         tree[2] = reader.Name == "row" ? 1 : 0;
                                         if (tree[0] == 1 && tree[1] == 1 && tree[2] == 1)
                                         {
+                                            row = int.Parse(reader["r"]);
                                             rowCells = new List<Cell>();
-                                            mergeCells = new List<Cell>();
-
-                                            int row = int.Parse(reader["r"]);
-                                            foreach (Cell mergeCell in _mergeCells)
-                                            {
-                                                if (mergeCell.Reference.Row <= row && row <= mergeCell.EndReference.Row)
-                                                    mergeCells.Add(mergeCell);
-                                            }
                                         }
                                         break;
                                     case 3:
@@ -321,83 +339,103 @@ namespace XlsxTextReader
                                 {
                                     case 1:
                                         if (tree[0] == 1 && tree[1] == 1)
-                                            read = true;
+                                            eof = true;
                                         break;
                                     case 2:
                                         if (tree[0] == 1 && tree[1] == 1 && tree[2] == 1)
                                         {
-                                            if (mergeCells.Count == 0)
-                                                yield return rowCells;
-                                            else
+                                            if (MaxRow < 0 || row <= MaxRow)
                                             {
-                                                List<Cell> newRowCells = new List<Cell>();
-                                                short i1 = 0, i2 = 0;
-                                                while (i1 < rowCells.Count || i2 < mergeCells.Count)
+                                                List<MergeCell> mergeCells = new List<MergeCell>();
+                                                foreach (MergeCell mergeCell in _mergeCells)
                                                 {
-                                                    if (i1 < rowCells.Count)
+                                                    if ((MaxColumn < 0 || mergeCell.Begin.Column <= MaxColumn) && mergeCell.Begin.Row <= row && row <= mergeCell.End.Row)
+                                                        mergeCells.Add(mergeCell);
+                                                }
+                                                mergeCells.Sort((x, y) => x.Begin.Column - y.Begin.Column);
+                                                rowCells.Sort((x, y) => x.Reference.Column - y.Reference.Column);
+
+                                                if (mergeCells.Count > 0 || rowCells.Count > 0)
+                                                {
+                                                    List<Cell> newRowCells = new List<Cell>();
+                                                    for (short column = 1, i1 = 0, i2 = 0; (MaxColumn < 0 || column <= MaxColumn) && (i1 < rowCells.Count || i2 < mergeCells.Count);)
                                                     {
-                                                        if (i2 >= mergeCells.Count || rowCells[i1].Reference.Column < mergeCells[i2].Reference.Column)
-                                                            newRowCells.Add(rowCells[i1]);
-                                                        ++i1;
-                                                    }
-                                                    if (i2 < mergeCells.Count)
-                                                    {
-                                                        if (i1 >= rowCells.Count || rowCells[i1].Reference.Column > mergeCells[i2].EndReference.Column)
+                                                        if (i2 < mergeCells.Count && mergeCells[i2].Begin.Column == column)
                                                         {
-                                                            for (short col = mergeCells[i2].Reference.Column; col <= mergeCells[i2].EndReference.Column; ++col)
-                                                                newRowCells.Add(new Cell(mergeCells[i2].Reference, mergeCells[i2].Value, mergeCells[i2].EndReference));
+                                                            if (i1 < rowCells.Count && rowCells[i1].Reference.Column == column) mergeCells[i2].Value = rowCells[i1].Value;
+                                                            for (; (MaxColumn < 0 || column <= MaxColumn) && column <= mergeCells[i2].End.Column; ++column)
+                                                            {
+                                                                if (i1 < rowCells.Count && rowCells[i1].Reference.Column == column) ++i1;
+                                                                newRowCells.Add(new Cell(new Reference(row, column), mergeCells[i2].Value));
+                                                            }
                                                             ++i2;
                                                         }
+                                                        else
+                                                        {
+                                                            if (i1 < rowCells.Count && rowCells[i1].Reference.Column == column)
+                                                            {
+                                                                newRowCells.Add(rowCells[i1]);
+                                                                ++i1;
+                                                            }
+                                                            else
+                                                                newRowCells.Add(new Cell(new Reference(row, column), ""));
+                                                            ++column;
+                                                        }
                                                     }
+                                                    yield return newRowCells;
                                                 }
-                                                yield return newRowCells;
                                             }
+
+                                            if (MaxRow >= 0 && row >= MaxRow) eof = true;
+                                            row = 0;
                                         }
                                         break;
                                     case 3:
                                         if (tree[0] == 1 && tree[1] == 1 && tree[2] == 1 && tree[3] == 1)
                                         {
-                                            string value;
-                                            switch (t)
+                                            Reference reference = new Reference(r);
+                                            if (MaxColumn < 0 || reference.Column <= MaxColumn)
                                             {
-                                                case "n":
-                                                case "str":
-                                                case "inlineStr":
-                                                    value = v;
-                                                    break;
-                                                case "b":
-                                                    value = v == "0" ? "FALSE" : "TRUE";
-                                                    break;
-                                                case "s":
-                                                    value = Workbook._sharedStrings[int.Parse(v)];
-                                                    break;
-                                                case "e":
-                                                    throw new Exception(r + ": 单元格有错误");
-                                                case "d":
-                                                    throw new Exception(r + ": 不支持解析时间类型的值");
-                                                case null:
-                                                    if (s != null && v != null)
-                                                    {
-                                                        string formatCode = Workbook._numFmts[Workbook._cellXfs[int.Parse(s)]];
-                                                        if (formatCode == BuiltinNumFmts[0] || formatCode == BuiltinNumFmts[49])
-                                                            value = v;
-                                                        else
-                                                            throw new Exception(r + ": 不支持解析: " + formatCode);
-                                                    }
-                                                    else
+                                                string value;
+                                                switch (t)
+                                                {
+                                                    case "n":
+                                                    case "str":
+                                                    case "inlineStr":
                                                         value = v;
-                                                    break;
-                                                default:
-                                                    throw new Exception(r + ": 不支持类型: " + t);
+                                                        break;
+                                                    case "b":
+                                                        value = v == "0" ? "FALSE" : "TRUE";
+                                                        break;
+                                                    case "s":
+                                                        value = Workbook._sharedStrings[int.Parse(v)];
+                                                        break;
+                                                    case "e":
+                                                        throw new Exception(r + ": 单元格有错误");
+                                                    case "d":
+                                                        throw new Exception(r + ": 不支持解析时间类型的值");
+                                                    case null:
+                                                        if (s != null && v != null)
+                                                        {
+                                                            int numFmtId = Workbook._cellXfs[int.Parse(s)];
+                                                            if (Workbook._numFmts.TryGetValue(numFmtId, out string formatCode))
+                                                            {
+                                                                if (formatCode == BuiltinNumFmts[0] || formatCode == BuiltinNumFmts[49])
+                                                                    value = v;
+                                                                else
+                                                                    throw new Exception(r + ": 不支持解析: formatCode=" + formatCode);
+                                                            }
+                                                            else
+                                                                throw new Exception(r + ": 不支持解析: numFmtId=" + numFmtId);
+                                                        }
+                                                        else
+                                                            value = v;
+                                                        break;
+                                                    default:
+                                                        throw new Exception(r + ": 不支持类型: " + t);
+                                                }
+                                                rowCells.Add(new Cell(reference, value ?? ""));
                                             }
-
-                                            Cell cell = new Cell(new Reference(r), value);
-                                            foreach (Cell mergeCell in mergeCells)
-                                            {
-                                                if (mergeCell.Reference.Row == cell.Reference.Row && mergeCell.Reference.Column == cell.Reference.Column)
-                                                    mergeCell.Value = cell.Value;
-                                            }
-                                            rowCells.Add(cell);
                                         }
                                         break;
                                 }
