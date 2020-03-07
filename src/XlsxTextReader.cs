@@ -362,11 +362,12 @@ namespace XlsxTextReader
                                                     {
                                                         if (i2 < mergeCells.Count && mergeCells[i2].Begin.Column == column)
                                                         {
-                                                            if (i1 < rowCells.Count && rowCells[i1].Reference.Column == column) mergeCells[i2].Value = rowCells[i1].Value;
-                                                            for (; (MaxColumn < 0 || column <= MaxColumn) && column <= mergeCells[i2].End.Column; ++column)
+                                                            MergeCell mergeCell = mergeCells[i2];
+                                                            if (i1 < rowCells.Count && rowCells[i1].Reference.Column == column) mergeCell.Value = rowCells[i1].Value;
+                                                            for (; (MaxColumn < 0 || column <= MaxColumn) && column <= mergeCell.End.Column; ++column)
                                                             {
                                                                 if (i1 < rowCells.Count && rowCells[i1].Reference.Column == column) ++i1;
-                                                                newRowCells.Add(new Cell(new Reference(row, column), mergeCells[i2].Value));
+                                                                newRowCells.Add(new MergeCell(new Reference(row, column), mergeCell.Value, mergeCell.Begin, mergeCell.End));
                                                             }
                                                             ++i2;
                                                         }
