@@ -248,7 +248,7 @@ namespace XlsxTextReader
                                         if (tree[0] == 1 && tree[1] == 1 && reader.Name == "mergeCell")
                                         {
                                             string[] refs = reader["ref"].Split(':');
-                                            _mergeCells[count++] = new MergeCell(new Reference(refs[0]), null, new Reference(refs[1]));
+                                            _mergeCells[count++] = new MergeCell(new Reference(refs[0]), "", new Reference(refs[1]));
                                         }
                                         break;
                                 }
