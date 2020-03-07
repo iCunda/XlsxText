@@ -358,7 +358,7 @@ namespace XlsxTextReader
                                                 if (mergeCells.Count > 0 || rowCells.Count > 0)
                                                 {
                                                     List<Cell> newRowCells = new List<Cell>();
-                                                    for (short column = 1, i1 = 0, i2 = 0; (MaxColumn < 0 || column <= MaxColumn) && (i1 < rowCells.Count || i2 < mergeCells.Count);)
+                                                    for (short column = 1, i1 = 0, i2 = 0; i1 < rowCells.Count || i2 < mergeCells.Count;)
                                                     {
                                                         if (i2 < mergeCells.Count && mergeCells[i2].Begin.Column == column)
                                                         {
