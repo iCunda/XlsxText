@@ -22,6 +22,9 @@ namespace XlsxTextReader
         /// </summary>
         public short Column { get; }
 
+        /// <summary>
+        /// 引用值
+        /// </summary>
         public string Value
         {
             get
@@ -31,6 +34,10 @@ namespace XlsxTextReader
             }
         }
 
+        /// <summary>
+        /// 值转引用
+        /// </summary>
+        /// <param name="value">引用值</param>
         public Reference(string value)
         {
             if (GetRowCol(value, out int row, out short column))
@@ -42,6 +49,11 @@ namespace XlsxTextReader
                 throw new Exception("无效引用值: " + value);
         }
 
+        /// <summary>
+        /// 行列号转引用
+        /// </summary>
+        /// <param name="row">行号</param>
+        /// <param name="column">列号</param>
         public Reference(int row, short column)
         {
             if (row < 0 && column < 0)
@@ -51,11 +63,11 @@ namespace XlsxTextReader
         }
 
         /// <summary>
-        /// 引用号获取行列值
+        /// 引用值获取行列值
         /// </summary>
         /// <param name="value">引用值</param>
         /// <param name="row">行号, 从1开始</param>
-        /// <param name="col">列号, 从1开始</param>
+        /// <param name="column">列号, 从1开始</param>
         /// <returns></returns>
         public static bool GetRowCol(string value, out int row, out short column)
         {
@@ -115,6 +127,8 @@ namespace XlsxTextReader
         /// </summary>
         public string Value { get; set; }
 
+        /// <param name="reference">引用</param>
+        /// <param name="value">文本值</param>
         public Cell(Reference reference, string value)
         {
             Reference = reference;
@@ -135,11 +149,19 @@ namespace XlsxTextReader
         /// 末点单元格引用
         /// </summary>
         public Reference End { get; }
+
+        /// <param name="reference">引用</param>
+        /// <param name="value">文本值</param>
+        /// <param name="end">右下引用</param>
         public MergeCell(Reference reference, string value, Reference end) : base(reference, value)
         {
             Begin = reference;
             End = end;
         }
+        /// <param name="reference">引用</param>
+        /// <param name="value">文本值</param>
+        /// <param name="begin">左上引用</param>
+        /// <param name="end">右下引用</param>
         public MergeCell(Reference reference, string value, Reference begin, Reference end) : base(reference, value)
         {
             Begin = begin;
@@ -168,12 +190,18 @@ namespace XlsxTextReader
         /// 最大列号，负数为无限制
         /// </summary>
         public short MaxColumn = -1;
+
+        /// <param name="workbook">工作簿</param>
+        /// <param name="name">名字</param>
         protected Worksheet(Workbook workbook, string name)
         {
             Workbook = workbook;
             Name = name;
         }
 
+        /// <summary>
+        /// 读取
+        /// </summary>
         public abstract IEnumerable<List<Cell>> Read();
     }
 
@@ -200,7 +228,7 @@ namespace XlsxTextReader
 
             private void Load()
             {
-                /**
+                /*
                  * <worksheet>
                  *     <sheetData>
                  *         <row r="1">
@@ -267,7 +295,7 @@ namespace XlsxTextReader
                 if (_mergeCells == null)
                     Load();
 
-                /**
+                /*
                  * <worksheet>
                  *     <sheetData>
                  *         <row r="1">
@@ -476,7 +504,7 @@ namespace XlsxTextReader
                 _rels = new Dictionary<string, string>();
                 using (Stream stream = _archive.GetEntry(RelationshipPart).Open())
                 {
-                    /**
+                    /*
                      * xl/_rels/workbook.xml.rels
                      * <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
                      *     <Relationship Id="rId8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
@@ -513,7 +541,7 @@ namespace XlsxTextReader
                 _worksheets = new Dictionary<string, string>();
                 using (Stream stream = _archive.GetEntry(WorkbookPart).Open())
                 {
-                    /**
+                    /*
                      * xl/workbook.xml
                      * <workbook>
                      *     <sheets>
@@ -561,7 +589,7 @@ namespace XlsxTextReader
                 {
                     if (stream != null)
                     {
-                        /**
+                        /*
                          * xl/sharedStrings.xml
                          * <sst>
                          *     <si>
@@ -635,7 +663,7 @@ namespace XlsxTextReader
                 {
                     if (stream != null)
                     {
-                        /**
+                        /*
                          * xl/styles.xml
                          * <styleSheet>
                          *     <numFmts count="2">
@@ -701,10 +729,25 @@ namespace XlsxTextReader
             public override void Dispose() => _archive.Dispose();
         }
 
+        /// <summary>
+        /// 关系段
+        /// </summary>
         public const string RelationshipPart = "xl/_rels/workbook.xml.rels";
+        /// <summary>
+        /// 工作薄段
+        /// </summary>
         public const string WorkbookPart = "xl/workbook.xml";
+        /// <summary>
+        /// 共享字符串
+        /// </summary>
         public const string SharedStringsPart = "xl/sharedStrings.xml";
+        /// <summary>
+        /// 样式
+        /// </summary>
         public const string StylesPart = "xl/styles.xml";
+        /// <summary>
+        /// 内置Number Formats
+        /// </summary>
         public static readonly ReadOnlyDictionary<int, string> BuiltinNumFmts = new ReadOnlyDictionary<int, string>(new Dictionary<int, string>()
         {
             { 0, "General" },
@@ -737,16 +780,42 @@ namespace XlsxTextReader
             { 49, "@" }
         });
 
+        /// <summary>
+        /// 关系表(id-url)
+        /// </summary>
         protected Dictionary<string, string> _rels;
+        /// <summary>
+        /// 工作表表(name-url)
+        /// </summary>
         protected Dictionary<string, string> _worksheets;
+        /// <summary>
+        /// 共享字符串
+        /// </summary>
         protected List<string> _sharedStrings;
+        /// <summary>
+        /// cellXfs
+        /// </summary>
         protected List<int> _cellXfs;
+        /// <summary>
+        /// numFmts
+        /// </summary>
         protected Dictionary<int, string> _numFmts;
 
+        /// <summary>
+        /// 读取
+        /// </summary>
         public abstract List<Worksheet> Read();
+
+        ///
         public abstract void Dispose();
 
+        /// <summary>
+        /// 打开工作簿
+        /// </summary>
         public static Workbook Open(Stream stream) => new WorkbookImpl(stream);
+        /// <summary>
+        /// 打开工作簿
+        /// </summary>
         public static Workbook Open(string path) => new WorkbookImpl(path);
     }
 }

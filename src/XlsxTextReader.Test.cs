@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 
+#if DEBUG
 namespace XlsxTextReader
 {
     class Program
@@ -24,3 +25,4 @@ namespace XlsxTextReader
         }
     }
 }
+#endif
