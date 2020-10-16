@@ -34,9 +34,6 @@ namespace XlsxTextReader
             }
         }
 
-        /// <summary>
-        /// 值转引用
-        /// </summary>
         /// <param name="value">引用值</param>
         public Reference(string value)
         {
@@ -49,11 +46,8 @@ namespace XlsxTextReader
                 throw new Exception("无效引用值: " + value);
         }
 
-        /// <summary>
-        /// 行列号转引用
-        /// </summary>
-        /// <param name="row">行号</param>
-        /// <param name="column">列号</param>
+        /// <param name="row">行号, 从1开始</param>
+        /// <param name="column">列号, 从1开始</param>
         public Reference(int row, short column)
         {
             if (row < 0 && column < 0)
